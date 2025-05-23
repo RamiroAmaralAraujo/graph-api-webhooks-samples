@@ -7,7 +7,9 @@
     "start": "node heroku/index.js"
   },
   "dependencies": {
+    "axios": "^1.9.0",
     "body-parser": "~1.20.3",
+    "dotenv": "^16.5.0",
     "express": "~4.13.3",
     "express-x-hub": "^1.0.4"
   },
