@@ -1,24 +1,27 @@
 require('dotenv').config();
-var bodyParser = require('body-parser');
-var express = require('express');
-var axios = require('axios');
-var app = express();
-var xhub = require('express-x-hub');
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
+const xhub = require('express-x-hub');
 
-app.set('port', (process.env.PORT || 5000));
+const app = express();
+
+app.set('port', process.env.PORT || 5000);
 
 app.use(xhub({ algorithm: 'sha1', secret: process.env.APP_SECRET }));
 app.use(bodyParser.json());
 
-var token = process.env.TOKEN || 'token';
-var accessToken = process.env.ACCESS_TOKEN;
-var igBusinessAccountId = process.env.IG_BUSINESS_ACCOUNT_ID;
+const token = process.env.TOKEN;
+const accessToken = process.env.ACCESS_TOKEN;
+const igBusinessAccountId = process.env.IG_BUSINESS_ACCOUNT_ID;
 
-var received_updates = [];
+const received_updates = [];
 
-// Função para enviar mensagem automática
+// Função para enviar mensagem
 async function sendMessage(recipientId, messageText) {
   try {
+    console.log(`➡️ Enviando mensagem para ${recipientId}: "${messageText}"`);
+
     const response = await axios.post(
       `https://graph.facebook.com/v22.0/${igBusinessAccountId}/messages`,
       {
@@ -34,32 +37,37 @@ async function sendMessage(recipientId, messageText) {
       }
     );
 
-    console.log('Mensagem enviada:', response.data);
+    console.log('✅ Mensagem enviada com sucesso:', response.data);
   } catch (error) {
-    console.error('Erro ao enviar mensagem:', error.response?.data || error.message);
+    console.error('❌ Erro ao enviar mensagem:', error.response?.data || error.message);
   }
 }
 
-// Página principal
+// Página principal para visualizar updates
 app.get('/', function(req, res) {
   res.send('<pre>' + JSON.stringify(received_updates, null, 2) + '</pre>');
 });
 
 // Verificação do webhook
 app.get(['/facebook', '/instagram', '/threads'], function(req, res) {
+  console.log('➡️ Verificação de Webhook recebida');
   if (
-    req.query['hub.mode'] == 'subscribe' &&
-    req.query['hub.verify_token'] == token
+    req.query['hub.mode'] === 'subscribe' &&
+    req.query['hub.verify_token'] === token
   ) {
+    console.log('✅ Webhook verificado com sucesso');
     res.send(req.query['hub.challenge']);
   } else {
+    console.warn('❌ Webhook falhou na verificação');
     res.sendStatus(400);
   }
 });
 
-// Recebe evento do Instagram
+// Recebimento de mensagens Instagram
 app.post('/instagram', async function(req, res) {
-  console.log('Instagram request body:', JSON.stringify(req.body, null, 2));
+  console.log('➡️ Recebido POST /instagram');
+  console.log('📦 Payload:', JSON.stringify(req.body, null, 2));
+
   received_updates.unshift(req.body);
 
   try {
@@ -67,41 +75,58 @@ app.post('/instagram', async function(req, res) {
     const changes = entry?.changes?.[0];
     const value = changes?.value;
 
-    // Apenas processa mensagens diretas
-    if (value?.messaging_product === 'instagram' && value?.messages) {
-      const message = value.messages[0];
-      const senderId = value.from;
+    let senderId = null;
+    let userMessage = null;
 
-      console.log(`Mensagem de ${senderId}: ${message.text}`);
+    // Payload real
+    if (value?.messaging_product === 'instagram' && value?.text) {
+      senderId = value.from;
+      userMessage = value.text;
+      console.log(`✅ Mensagem REAL de ${senderId}: "${userMessage}"`);
+    } 
+    // Payload de teste
+    else if (value?.sender?.id && value?.message?.text) {
+      senderId = value.sender.id;
+      userMessage = value.message.text;
+      console.log(`✅ Mensagem TESTE de ${senderId}: "${userMessage}"`);
+    } 
+    else {
+      console.warn('❓ Payload não corresponde a nenhum formato conhecido');
+    }
 
-      // Aqui responde automaticamente
+    if (senderId && userMessage) {
       await sendMessage(senderId, 'Olá! Como posso ajudar?');
+    } else {
+      console.warn('❌ Não foi possível extrair senderId e userMessage');
     }
   } catch (error) {
-    console.error('Erro no processamento da mensagem:', error);
+    console.error('❌ Erro no processamento do payload:', error);
   }
 
   res.sendStatus(200);
 });
 
+// Recebimento de mensagens Facebook
 app.post('/facebook', function(req, res) {
-  console.log('Facebook request body:', JSON.stringify(req.body, null, 2));
+  console.log('➡️ Recebido POST /facebook');
   if (!req.isXHubValid()) {
-    console.log('Warning - request header X-Hub-Signature not present or invalid');
+    console.warn('❌ X-Hub-Signature inválida');
     res.sendStatus(401);
     return;
   }
-  console.log('request header X-Hub-Signature validated');
+  console.log('✅ X-Hub-Signature validada');
   received_updates.unshift(req.body);
   res.sendStatus(200);
 });
 
+// Recebimento de mensagens Threads
 app.post('/threads', function(req, res) {
-  console.log('Threads request body:', JSON.stringify(req.body, null, 2));
+  console.log('➡️ Recebido POST /threads');
   received_updates.unshift(req.body);
   res.sendStatus(200);
 });
 
+// Inicia o servidor
 app.listen(app.get('port'), () => {
-  console.log(`Servidor rodando na porta ${app.get('port')}`);
+  console.log(`🚀 Servidor rodando na porta ${app.get('port')}`);
 });
